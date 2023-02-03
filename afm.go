@@ -5,6 +5,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 // FontMetric from an AFM file provides both global metrics for a font program
@@ -114,6 +115,19 @@ func Parse(b []byte) (*FontMetric, error) {
 	fm.KernTracks = make(map[int]*KernTrack)
 	fm.Composites = make(map[string]*Composite)
 
+	charMetricLines := make([][]byte, 0, 255)
+	kernPairLines := make([][]byte, 0, 255)
+	kernPairVerticalLines := make([][]byte, 0)
+	kernTrackLines := make([][]byte, 0)
+	compositeLines := make([][]byte, 0)
+
+	charMetricCode := sync.Map{}
+	charMetricName := sync.Map{}
+	kernPair := sync.Map{}
+	kernPairVertical := sync.Map{}
+	kernTrack := sync.Map{}
+	composite := sync.Map{}
+
 	lines = bytes.Split(b, []byte("\n"))
 
 	for i, line := range lines {
@@ -157,33 +171,94 @@ func Parse(b []byte) (*FontMetric, error) {
 		}
 		switch whereAreWe {
 		case CharMetrics:
-			cm := parseCharMetric(line)
-			if cm.C >= 0 {
-				fm.CharMetricsByCode[cm.C] = cm
-			}
-			fm.CharMetricsByName[cm.N] = cm
+			charMetricLines = append(charMetricLines, line)
 		case KernPairsHorizontal:
-			kp := parseKernPair(line)
-			if _, ok := fm.KernPair[kp.First]; !ok {
-				fm.KernPair[kp.First] = make(map[string]*KernPair)
-			}
-			fm.KernPair[kp.First][kp.Second] = kp
+			kernPairLines = append(kernPairLines, line)
 		case KernPairsVertical:
-			kp := parseKernPair(line)
-			if _, ok := fm.KernPairVertical[kp.First]; !ok {
-				fm.KernPairVertical[kp.First] = make(map[string]*KernPair)
-			}
-			fm.KernPairVertical[kp.First][kp.Second] = kp
+			kernPairVerticalLines = append(kernPairVerticalLines, line)
 		case KernTracking:
-			kt := parseKernTrack(line)
-			fm.KernTracks[kt.Degree] = kt
+			kernTrackLines = append(kernTrackLines, line)
 		case Composites:
-			c := parseComposite(line)
-			fm.Composites[c.Name] = c
+			compositeLines = append(compositeLines, line)
 		default:
 			parseForGlobal(fm, line)
 		}
 	}
+
+	// its fucking slower
+	wg := sync.WaitGroup{}
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for i, _ := range charMetricLines {
+			wg.Add(1)
+			go func(i int) {
+				cm := parseCharMetric(charMetricLines[i])
+				charMetricCode.Store(cm.C, cm)
+				charMetricName.Store(cm.N, cm)
+				wg.Done()
+			}(i)
+		}
+	}()
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for i, _ := range kernPairLines {
+			wg.Add(1)
+			go func(i int) {
+				kp := parseKernPair(kernPairLines[i])
+				if _, ok := kernPair.Load(kp.First); !ok {
+					inside := sync.Map{}
+					kernPair.Store(kp.First, &inside)
+				}
+				fA, _ := kernPair.Load(kp.First)
+				fA.(*sync.Map).Store(kp.Second, kp)
+				wg.Done()
+			}(i)
+		}
+	}()
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for i, _ := range kernPairVerticalLines {
+			wg.Add(1)
+			go func(i int) {
+				kp := parseKernPair(kernPairVerticalLines[i])
+				if _, ok := kernPairVertical.Load(kp.First); !ok {
+					inside := sync.Map{}
+					kernPairVertical.Store(kp.First, &inside)
+				}
+				fA, _ := kernPairVertical.Load(kp.First)
+				fA.(*sync.Map).Store(kp.Second, kp)
+				wg.Done()
+			}(i)
+		}
+	}()
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for i, _ := range kernTrackLines {
+			wg.Add(1)
+			go func(i int) {
+				kt := parseKernTrack(kernTrackLines[i])
+				kernTrack.Store(kt.Degree, kt)
+				wg.Done()
+			}(i)
+		}
+	}()
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for i, _ := range compositeLines {
+			wg.Add(1)
+			go func(i int) {
+				c := parseComposite(compositeLines[i])
+				composite.Store(c.Name, c)
+				wg.Done()
+			}(i)
+		}
+	}()
+	wg.Wait()
 
 	return fm, nil
 }
