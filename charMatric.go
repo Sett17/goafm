@@ -2,6 +2,7 @@ package goafm
 
 import (
 	"bytes"
+	"fmt"
 	"strconv"
 )
 
@@ -22,6 +23,10 @@ type CharMetric struct {
 	N   string    // N is the character name.
 	B   [4]Number // B is the bounding box.
 	L   [2]string // L is the ligature sequence.
+}
+
+func (c CharMetric) String() string {
+	return fmt.Sprintf("'%c', 0x%X, %s: {WX: %d, B: %v}", c.C, c.C, c.N, c.WX.GetInt(), c.B)
 }
 
 // parseCharMetric parses a line of AFM file data and returns a CharMetric struct.

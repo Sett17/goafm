@@ -5,6 +5,19 @@ import (
 	"testing"
 )
 
+func TestOther(t *testing.T) {
+	file, err := os.ReadFile("Times-Roman.afm")
+	if err != nil {
+		t.Fatal(err)
+	}
+	afm, err := Parse(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Log(afm.MetricByRune('A'))
+	t.Log(afm.MetricByRune('€'))
+}
+
 func TestParse(t *testing.T) {
 	file, err := os.ReadFile("Times-Roman.afm")
 	if err != nil {

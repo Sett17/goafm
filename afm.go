@@ -65,7 +65,11 @@ func (fm *FontMetric) MetricByName(name string) *CharMetric {
 
 // MetricByRune returns the CharMetric of the font metric by the rune representation.
 func (fm *FontMetric) MetricByRune(r rune) *CharMetric {
-	return fm.CharMetricsByCode[int(r)]
+	ret := fm.CharMetricsByCode[int(r)]
+	if ret == nil {
+		ret = fm.CharMetricsByName[AGLFN[(uint16(r))].short]
+	}
+	return ret
 }
 
 var lines [][]byte
